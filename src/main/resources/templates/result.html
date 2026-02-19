@@ -1,0 +1,13 @@
+<!DOCTYPE html> 
+<html xmlns:th="http://www.thymeleaf.org"> 
+<body> 
+    <h2>Result</h2> 
+    <p>Operand 1: <span th:text="${operand1}"></span></p> 
+    <p>Operator: <span th:text="${operator}"></span></p> 
+    <p>Operand 2: <span th:text="${operand2}"></span></p> 
+    <p>Result: <span th:text="${result}"></span></p> 
+    <a th:href="@{/}">New Calculation</a> 
+    <br/> 
+    <a th:href="@{/?operand1={r}(r=${result})}">Continue Calculation</a> 
+</body> 
+</html> 
