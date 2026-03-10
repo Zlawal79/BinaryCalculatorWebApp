@@ -1,0 +1,71 @@
+pipeline {
+    agent any
+
+    environment {
+        PROJECT_ID     = credentials('project_id')
+        REPO_PATH      = credentials('repo_path')
+        CLUSTER_NAME   = credentials('cluster_name')
+        CLUSTER_ZONE   = credentials('cluster_zone')
+        SERVICE_ACCOUNT = credentials('service_account')
+    }
+
+    stages {
+
+        stage('Checkout Code') {
+            steps {
+                git branch: 'main',
+                    url: 'https://github.com/Zlawal79/BinaryCalculatorWebApp.git'
+            }
+        }
+
+        stage('Build with Maven') {
+            steps {
+                sh 'mvn -B -DskipTests clean package'
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                sh """
+                    docker build -t ${REPO_PATH}/binarycalculator:latest .
+                """
+            }
+        }
+
+        stage('Push to Artifact Registry') {
+            steps {
+                sh """
+                    gcloud auth configure-docker ${REPO_PATH%/*} -q
+                    docker push ${REPO_PATH}/binarycalculator:latest
+                """
+            }
+        }
+
+        stage('Connect to GKE') {
+            steps {
+                sh """
+                    gcloud container clusters get-credentials ${CLUSTER_NAME} \
+                        --zone ${CLUSTER_ZONE} \
+                        --project ${PROJECT_ID}
+                """
+            }
+        }
+
+        stage('Deploy to GKE') {
+            steps {
+                sh """
+                    kubectl apply -f k8s/deployment.yaml
+                    kubectl apply -f k8s/service.yaml
+                """
+            }
+        }
+
+        stage('Get External IP') {
+            steps {
+                sh """
+                    kubectl get svc binarycalculator-service
+                """
+            }
+        }
+    }
+}
