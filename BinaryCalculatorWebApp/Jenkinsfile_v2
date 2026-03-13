@@ -1,6 +1,6 @@
 pipeline {
     environment {
-        SERVICE_ACCOUNT = credentials('service_account')     // JSON key file
+        SERVICE_ACCOUNT = credentials('service_account')     
         PROJECT = credentials('project_id')
         REPO_PATH = credentials('repo_path')
         APP_NAME = "binarycalculatorwebapp"
@@ -37,20 +37,20 @@ spec:
 
         stage('test') {
             steps {
-                sh 'mvn clean test -f ./BinaryCalculatorWebapp/pom.xml'
+                sh 'mvn clean test -f ./BinaryCalculatorWebApp/pom.xml'
             }
         }
 
         stage('build') {
             steps {
-                sh 'mvn -f ./BinaryCalculatorWebapp/pom.xml -DskipTests clean package'
+                sh 'mvn -f ./BinaryCalculatorWebApp/pom.xml -DskipTests clean package'
             }
         }
 
         stage('containerize') {
             steps {
                 container('gcloud') {
-                    dir('BinaryCalculatorWebapp') {
+                    dir('BinaryCalculatorWebApp') {
                         sh 'gcloud auth activate-service-account --key-file $SERVICE_ACCOUNT'
                         sh 'gcloud config set project $PROJECT'
                         sh 'gcloud builds submit -t $IMAGE_TAG --suppress-logs'
@@ -62,7 +62,7 @@ spec:
         stage('deployment') {
             steps {
                 container('gcloud') {
-                    dir('BinaryCalculatorWebapp') {
+                    dir('BinaryCalculatorWebApp') {
                         sh 'gcloud auth activate-service-account --key-file $SERVICE_ACCOUNT'
                         sh 'gcloud config set project $PROJECT'
                         sh 'gcloud container clusters get-credentials $CLUSTER --region=$CLUSTER_ZONE'
@@ -84,7 +84,7 @@ spec:
         stage('service') {
             steps {
                 container('gcloud') {
-                    dir('BinaryCalculatorWebapp') {
+                    dir('BinaryCalculatorWebApp') {
                         sh 'gcloud auth activate-service-account --key-file $SERVICE_ACCOUNT'
                         sh 'gcloud config set project $PROJECT'
                         sh 'gcloud container clusters get-credentials $CLUSTER --region=$CLUSTER_ZONE'
