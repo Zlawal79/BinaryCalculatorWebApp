@@ -1,70 +1,105 @@
 pipeline {
-    agent any
-
     environment {
-        PROJECT_ID     = credentials('project_id')
-        REPO_PATH      = credentials('repo_path')
-        CLUSTER_NAME   = credentials('cluster_name')
-        CLUSTER_ZONE   = credentials('cluster_zone')
-        SERVICE_ACCOUNT = credentials('service_account')
+        SERVICE_ACCOUNT = credentials('service_account')     // JSON key file
+        PROJECT = credentials('project_id')
+        REPO_PATH = credentials('repo_path')
+        APP_NAME = "binarycalculatorwebapp"
+        IMAGE_TAG = "$REPO_PATH/$APP_NAME"
+        CLUSTER = credentials("cluster_name")
+        CLUSTER_ZONE = credentials("cluster_zone")
+    }
+
+    agent {
+        kubernetes {
+            label 'sample-app'
+            yaml """
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    component: ci
+spec:
+  containers:
+    - name: gcloud
+      image: google/cloud-sdk:latest
+      command:
+        - cat
+      tty: true
+"""
+        }
+    }
+
+    tools {
+        maven 'maven'
     }
 
     stages {
 
-        stage('Checkout Code') {
+        stage('test') {
             steps {
-                git branch: 'main',
-                    url: 'https://github.com/Zlawal79/BinaryCalculatorWebApp.git'
+                sh 'mvn clean test -f ./BinaryCalculatorWebapp/pom.xml'
             }
         }
 
-        stage('Build with Maven') {
+        stage('build') {
             steps {
-                sh 'mvn -B -DskipTests clean package'
+                sh 'mvn -f ./BinaryCalculatorWebapp/pom.xml -DskipTests clean package'
             }
         }
 
-        stage('Build Docker Image') {
+        stage('containerize') {
             steps {
-                sh """
-                    docker build -t ${REPO_PATH}/binarycalculator:latest .
-                """
+                container('gcloud') {
+                    dir('BinaryCalculatorWebapp') {
+                        sh 'gcloud auth activate-service-account --key-file $SERVICE_ACCOUNT'
+                        sh 'gcloud config set project $PROJECT'
+                        sh 'gcloud builds submit -t $IMAGE_TAG --suppress-logs'
+                    }
+                }
             }
         }
 
-        stage('Push to Artifact Registry') {
+        stage('deployment') {
             steps {
-                sh """
-                    gcloud auth configure-docker ${REPO_PATH%/*} -q
-                    docker push ${REPO_PATH}/binarycalculator:latest
-                """
+                container('gcloud') {
+                    dir('BinaryCalculatorWebapp') {
+                        sh 'gcloud auth activate-service-account --key-file $SERVICE_ACCOUNT'
+                        sh 'gcloud config set project $PROJECT'
+                        sh 'gcloud container clusters get-credentials $CLUSTER --region=$CLUSTER_ZONE'
+
+                        script {
+                            try {
+                                sh 'kubectl delete deployment binarycalculator-deployment'
+                            } catch (Exception e) {
+                                // ignore if not found
+                            }
+                        }
+
+                        sh 'kubectl create deployment binarycalculator-deployment --image=$IMAGE_TAG --port=8080'
+                    }
+                }
             }
         }
 
-        stage('Connect to GKE') {
+        stage('service') {
             steps {
-                sh """
-                    gcloud container clusters get-credentials ${CLUSTER_NAME} \
-                        --zone ${CLUSTER_ZONE} \
-                        --project ${PROJECT_ID}
-                """
-            }
-        }
+                container('gcloud') {
+                    dir('BinaryCalculatorWebapp') {
+                        sh 'gcloud auth activate-service-account --key-file $SERVICE_ACCOUNT'
+                        sh 'gcloud config set project $PROJECT'
+                        sh 'gcloud container clusters get-credentials $CLUSTER --region=$CLUSTER_ZONE'
 
-        stage('Deploy to GKE') {
-            steps {
-                sh """
-                    kubectl apply -f k8s/deployment.yaml
-                    kubectl apply -f k8s/service.yaml
-                """
-            }
-        }
+                        script {
+                            try {
+                                sh 'kubectl expose deployment binarycalculator-deployment --type=LoadBalancer --name=binarycalculator-service'
+                            } catch (Exception e) {
+                                // ignore if already exists
+                            }
+                        }
 
-        stage('Get External IP') {
-            steps {
-                sh """
-                    kubectl get svc binarycalculator-service
-                """
+                        sh "kubectl get service/binarycalculator-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}'"
+                    }
+                }
             }
         }
     }
